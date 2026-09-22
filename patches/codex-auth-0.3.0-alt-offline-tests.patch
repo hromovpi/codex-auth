@@ -1,0 +1,34 @@
+diff --git a/tests/cli_integration_test.zig b/tests/cli_integration_test.zig
+index 8338d25..75f9c97 100644
+--- a/tests/cli_integration_test.zig
++++ b/tests/cli_integration_test.zig
+@@ -4119,7 +4119,13 @@ test "Scenario: Given non-tty remove with invalid selection input when running r
+         .{ .email = "keeper@example.com", .alias = "" },
+     });
+ 
+-    const result = try runCliWithIsolatedHomeAndStdin(gpa, project_root, home_root, &[_][]const u8{"remove"}, "{\"id\":1}\n");
++    const result = try runCliWithIsolatedHomeAndStdin(
++        gpa,
++        project_root,
++        home_root,
++        &[_][]const u8{ "remove", "--skip-api" },
++        "{\"id\":1}\n",
++    );
+     defer gpa.free(result.stdout);
+     defer gpa.free(result.stderr);
+ 
+@@ -4322,7 +4328,13 @@ test "Scenario: Given non-tty stdin when running interactive remove then it fall
+         .{ .email = "keeper@example.com", .alias = "" },
+     });
+ 
+-    const result = try runCliWithIsolatedHomeAndStdin(gpa, project_root, home_root, &[_][]const u8{"remove"}, "");
++    const result = try runCliWithIsolatedHomeAndStdin(
++        gpa,
++        project_root,
++        home_root,
++        &[_][]const u8{ "remove", "--skip-api" },
++        "",
++    );
+     defer gpa.free(result.stdout);
+     defer gpa.free(result.stderr);
+ 

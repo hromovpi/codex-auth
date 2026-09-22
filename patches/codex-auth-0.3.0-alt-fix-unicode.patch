@@ -1,0 +1,274 @@
+diff --git a/src/cli/rows.zig b/src/cli/rows.zig
+index 0e1d232..1442b3c 100644
+--- a/src/cli/rows.zig
++++ b/src/cli/rows.zig
+@@ -4,6 +4,7 @@ const builtin = @import("builtin");
+ const display_rows = @import("../tui/display.zig");
+ const registry = @import("../registry/root.zig");
+ const timefmt = @import("../time/relative.zig");
++const text_width = @import("../tui/text_width.zig");
+ const c = @cImport({
+     @cInclude("time.h");
+ });
+@@ -126,7 +127,7 @@ pub fn buildSwitchRowsWithUsageOverrides(
+                 .has_error = usage_override != null,
+                 .is_header = false,
+             };
+-            widths.email = @max(widths.email, display_row.account_cell.len + (@as(usize, display_row.depth) * 2));
++            widths.email = @max(widths.email, text_width.displayWidth(display_row.account_cell) + (@as(usize, display_row.depth) * 2));
+             widths.plan = @max(widths.plan, plan.len);
+             widths.rate_5h = @max(widths.rate_5h, rate_5h_str.len);
+             widths.rate_week = @max(widths.rate_week, rate_week_str.len);
+@@ -144,7 +145,7 @@ pub fn buildSwitchRowsWithUsageOverrides(
+                 .has_error = false,
+                 .is_header = true,
+             };
+-            widths.email = @max(widths.email, display_row.account_cell.len + (@as(usize, display_row.depth) * 2));
++            widths.email = @max(widths.email, text_width.displayWidth(display_row.account_cell) + (@as(usize, display_row.depth) * 2));
+         }
+     }
+     if (widths.email > 32) widths.email = 32;
+@@ -202,7 +203,7 @@ pub fn buildSwitchRowsFromIndicesWithUsageOverrides(
+                 .has_error = usage_override != null,
+                 .is_header = false,
+             };
+-            widths.email = @max(widths.email, display_row.account_cell.len + (@as(usize, display_row.depth) * 2));
++            widths.email = @max(widths.email, text_width.displayWidth(display_row.account_cell) + (@as(usize, display_row.depth) * 2));
+             widths.plan = @max(widths.plan, plan.len);
+             widths.rate_5h = @max(widths.rate_5h, rate_5h_str.len);
+             widths.rate_week = @max(widths.rate_week, rate_week_str.len);
+@@ -220,7 +221,7 @@ pub fn buildSwitchRowsFromIndicesWithUsageOverrides(
+                 .has_error = false,
+                 .is_header = true,
+             };
+-            widths.email = @max(widths.email, display_row.account_cell.len + (@as(usize, display_row.depth) * 2));
++            widths.email = @max(widths.email, text_width.displayWidth(display_row.account_cell) + (@as(usize, display_row.depth) * 2));
+         }
+     }
+     if (widths.email > 32) widths.email = 32;
+diff --git a/src/cli/table_layout.zig b/src/cli/table_layout.zig
+index 24db81f..8c1b5da 100644
+--- a/src/cli/table_layout.zig
++++ b/src/cli/table_layout.zig
+@@ -1,6 +1,7 @@
+ const std = @import("std");
+ const row_data = @import("rows.zig");
+ const style = @import("style.zig");
++const text_width = @import("../tui/text_width.zig");
+ 
+ pub const SwitchWidths = row_data.SwitchWidths;
+ 
+@@ -146,13 +147,14 @@ fn growBoundedWidth(remaining: *usize, current: *usize, target: usize) void {
+ 
+ fn writePadded(out: *std.Io.Writer, value: []const u8, width: usize) !void {
+     try out.writeAll(value);
+-    if (value.len >= width) return;
+-    try out.splatByteAll(' ', width - value.len);
++    const value_width = text_width.displayWidth(value);
++    if (value_width >= width) return;
++    try out.splatByteAll(' ', width - value_width);
+ }
+ 
+ fn writeTruncatedPadded(out: *std.Io.Writer, value: []const u8, width: usize) !void {
+     if (width == 0) return;
+-    if (value.len <= width) {
++    if (text_width.displayWidth(value) <= width) {
+         try writePadded(out, value, width);
+         return;
+     }
+@@ -160,13 +162,14 @@ fn writeTruncatedPadded(out: *std.Io.Writer, value: []const u8, width: usize) !v
+         try out.writeAll(".");
+         return;
+     }
+-    try out.writeAll(value[0 .. width - 1]);
++    try out.writeAll(value[0..text_width.prefixByteLength(value, width - 1)]);
+     try out.writeAll(".");
+ }
+ 
+ fn writeAccountTruncatedPadded(out: *std.Io.Writer, value: []const u8, width: usize) !void {
+     if (width == 0) return;
+-    if (value.len <= width) {
++    const value_width = text_width.displayWidth(value);
++    if (value_width <= width) {
+         try writePadded(out, value, width);
+         return;
+     }
+@@ -181,11 +184,11 @@ fn writeAccountTruncatedPadded(out: *std.Io.Writer, value: []const u8, width: us
+         return;
+     }
+ 
+-    const suffix_len = @min(max_suffix, @max(live_account_suffix_min_len, value.len - 1 - live_account_prefix_min_len));
++    const suffix_len = @min(max_suffix, @max(live_account_suffix_min_len, value_width - 1 - live_account_prefix_min_len));
+     const prefix_len = width - suffix_len - 1;
+-    try out.writeAll(value[0..prefix_len]);
++    try out.writeAll(value[0..text_width.prefixByteLength(value, prefix_len)]);
+     try out.writeAll(".");
+-    try out.writeAll(value[value.len - suffix_len ..]);
++    try out.writeAll(value[text_width.suffixStart(value, suffix_len)..]);
+ }
+ 
+ fn writeRepeat(out: *std.Io.Writer, ch: u8, count: usize) !void {
+diff --git a/src/tui/table.zig b/src/tui/table.zig
+index cac5762..bdbd7cf 100644
+--- a/src/tui/table.zig
++++ b/src/tui/table.zig
+@@ -6,6 +6,7 @@ const registry = @import("../registry/root.zig");
+ const io_util = @import("../core/io_util.zig");
+ const rate_limit = @import("rate_limit.zig");
+ const timefmt = @import("../time/relative.zig");
++const text_width = @import("text_width.zig");
+ 
+ const resolveRateWindow = rate_limit.resolveRateWindow;
+ const formatRateLimitUiAlloc = rate_limit.formatRateLimitUiAlloc;
+@@ -139,7 +140,7 @@ pub fn writeAccountsTableWithUsageOverrides(
+ 
+     for (display.rows) |row| {
+         const indent: usize = @as(usize, row.depth) * 2;
+-        widths[0] = @max(widths[0], row.account_cell.len + indent);
++        widths[0] = @max(widths[0], text_width.displayWidth(row.account_cell) + indent);
+         if (row.account_index) |account_idx| {
+             const rec = reg.accounts.items[account_idx];
+             const plan = planDisplay(&rec, "-");
+@@ -321,7 +322,8 @@ pub fn printTableRow(out: *std.Io.Writer, widths: []const usize, cells: []const
+     for (cells, 0..) |cell, idx| {
+         try out.writeAll(" ");
+         try out.print("{s}", .{cell});
+-        const pad = if (cell.len >= widths[idx]) 0 else (widths[idx] - cell.len);
++        const cell_width = text_width.displayWidth(cell);
++        const pad = if (cell_width >= widths[idx]) 0 else (widths[idx] - cell_width);
+         var i: usize = 0;
+         while (i < pad) : (i += 1) {
+             try out.writeAll(" ");
+@@ -333,9 +335,10 @@ pub fn printTableRow(out: *std.Io.Writer, widths: []const usize, cells: []const
+ 
+ fn writePadded(out: *std.Io.Writer, value: []const u8, width: usize) !void {
+     try out.writeAll(value);
+-    if (value.len >= width) return;
++    const value_width = text_width.displayWidth(value);
++    if (value_width >= width) return;
+     var i: usize = 0;
+-    const pad = width - value.len;
++    const pad = width - value_width;
+     while (i < pad) : (i += 1) {
+         try out.writeAll(" ");
+     }
+@@ -514,10 +517,10 @@ fn terminalWidth() usize {
+ }
+ 
+ pub fn truncateAlloc(value: []const u8, max_len: usize) ![]u8 {
+-    if (value.len <= max_len) return try std.fmt.allocPrint(std.heap.page_allocator, "{s}", .{value});
++    if (text_width.displayWidth(value) <= max_len) return try std.fmt.allocPrint(std.heap.page_allocator, "{s}", .{value});
+     if (max_len == 0) return try std.fmt.allocPrint(std.heap.page_allocator, "", .{});
+     if (max_len == 1) return try std.fmt.allocPrint(std.heap.page_allocator, ".", .{});
+-    return std.fmt.allocPrint(std.heap.page_allocator, "{s}.", .{value[0 .. max_len - 1]});
++    return std.fmt.allocPrint(std.heap.page_allocator, "{s}.", .{value[0..text_width.prefixByteLength(value, max_len - 1)]});
+ }
+ 
+ fn writeIndexPadded(out: *std.Io.Writer, idx: usize, width: usize) !void {
+diff --git a/src/tui/text_width.zig b/src/tui/text_width.zig
+new file mode 100644
+index 0000000..1ce92ac
+--- /dev/null
++++ b/src/tui/text_width.zig
+@@ -0,0 +1,38 @@
++const std = @import("std");
++
++pub fn displayWidth(value: []const u8) usize {
++    var width: usize = 0;
++    var index: usize = 0;
++    while (index < value.len) : (width += 1) {
++        index += codepointByteLength(value[index..]);
++    }
++    return width;
++}
++
++pub fn prefixByteLength(value: []const u8, max_width: usize) usize {
++    var width: usize = 0;
++    var index: usize = 0;
++    while (index < value.len and width < max_width) : (width += 1) {
++        index += codepointByteLength(value[index..]);
++    }
++    return index;
++}
++
++pub fn suffixStart(value: []const u8, max_width: usize) usize {
++    const width = displayWidth(value);
++    if (width <= max_width) return 0;
++    return prefixByteLength(value, width - max_width);
++}
++
++fn codepointByteLength(value: []const u8) usize {
++    const len = std.unicode.utf8ByteSequenceLength(value[0]) catch return 1;
++    if (len > value.len) return 1;
++    _ = std.unicode.utf8Decode(value[0..len]) catch return 1;
++    return len;
++}
++
++test "display width counts UTF-8 codepoints instead of bytes" {
++    try std.testing.expectEqual(@as(usize, 7), displayWidth("Рабочая"));
++    try std.testing.expectEqual(@as(usize, 6), prefixByteLength("Рабочая", 3));
++    try std.testing.expectEqualStrings("чая", "Рабочая"[suffixStart("Рабочая", 3)..]);
++}
+diff --git a/tests/cli_picker_test.zig b/tests/cli_picker_test.zig
+index 9e0931f..f87515f 100644
+--- a/tests/cli_picker_test.zig
++++ b/tests/cli_picker_test.zig
+@@ -431,6 +431,40 @@ test "Scenario: Given long account labels when rendering live rows then account
+     try std.testing.expect(std.mem.indexOf(u8, output, "child-name-too-long") == null);
+ }
+ 
++test "Scenario: Given a Cyrillic account label when rendering live rows then truncation preserves UTF-8" {
++    var rows = [_]SwitchRow{
++        testHeaderRow("gorod.ged"),
++        .{
++            .account_index = 0,
++            .account = testMutableString("Рабочая область"),
++            .plan = "Business",
++            .rate_5h = testMutableString("99%"),
++            .rate_week = testMutableString("100%"),
++            .last = testMutableString("Now"),
++            .depth = 1,
++            .is_active = true,
++            .has_error = false,
++            .is_header = false,
++        },
++    };
++    var reg = makeTestRegistry();
++    defer reg.deinit(std.testing.allocator);
++
++    var buffer: [512]u8 = undefined;
++    var writer: std.Io.Writer = .fixed(&buffer);
++    try renderSwitchList(&writer, &reg, &rows, 2, .{
++        .email = 6,
++        .plan = 8,
++        .rate_5h = 3,
++        .rate_week = 4,
++        .last = 3,
++    }, null, false);
++
++    const output = writer.buffered();
++    try std.testing.expect(std.unicode.utf8ValidateSlice(output));
++    try std.testing.expect(std.mem.indexOf(u8, output, "Раб.") != null);
++}
++
+ test "Scenario: Given a narrow live viewport when rendering then the account column truncates instead of wrapping" {
+     const gpa = std.testing.allocator;
+     var reg = makeTestRegistry();
+diff --git a/tests/tui_table_test.zig b/tests/tui_table_test.zig
+index 4a9ac5b..c870a06 100644
+--- a/tests/tui_table_test.zig
++++ b/tests/tui_table_test.zig
+@@ -94,6 +94,13 @@ test "truncateAlloc respects max_len" {
+     try std.testing.expect(out2.len == 1);
+ }
+ 
++test "truncateAlloc preserves UTF-8 codepoint boundaries" {
++    const out = try truncateAlloc("Рабочая область", 5);
++    defer std.heap.page_allocator.free(out);
++    try std.testing.expectEqualStrings("Рабо.", out);
++    try std.testing.expect(std.unicode.utf8ValidateSlice(out));
++}
++
+ test "formatRateLimitFullAlloc shows 100% after reset instead of dash-prefixed value" {
+     const now = std.Io.Timestamp.now(app_runtime.io(), .real).toSeconds();
+     const window = registry.RateLimitWindow{

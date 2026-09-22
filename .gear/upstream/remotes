@@ -1,0 +1,3 @@
+[remote "upstream"]
+       url = https://github.com/Loongphy/codex-auth
+       fetch = +refs/heads/*:refs/remotes/upstream/*
