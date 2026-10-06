@@ -1,0 +1,53 @@
+name: RPM (ALT Sisyphus)
+
+on:
+  push:
+    branches: [sisyphus]
+  pull_request:
+    branches: [sisyphus]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rpm:
+    name: Build RPM (Sisyphus x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout packaging and upstream tags
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Build and test RPM
+        run: |
+          mkdir -p artifacts
+          docker run --rm --platform linux/amd64 \
+            -v "$GITHUB_WORKSPACE:/workspace:ro" \
+            -v "$GITHUB_WORKSPACE/artifacts:/artifacts" \
+            alt:sisyphus bash -euxo pipefail -c '
+              apt-get update
+              apt-get install -y gear git rpm-build rpm-macros-zig zig gcc glibc-devel curl su shadow-utils
+              useradd -m builder
+              cp -a /workspace /home/builder/source
+              chown -R builder:builder /home/builder/source /artifacts
+              su - builder -s /bin/bash -c "
+                set -euxo pipefail
+                cd /home/builder/source
+                mkdir -p /home/builder/rpm/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+                gear --export-dir=/home/builder/rpm/SOURCES
+                rpmbuild -ba /home/builder/rpm/SOURCES/codex-auth.spec \\
+                  --define \"_topdir /home/builder/rpm\" \\
+                  --define \"_zig_general_options --verbose --release=safe -j2\"
+                cp -a /home/builder/rpm/RPMS /home/builder/rpm/SRPMS /artifacts/
+              "
+            '
+
+      - name: Upload RPM and SRPM
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-auth-sisyphus-x86_64
+          path: artifacts/**/*.rpm
+          if-no-files-found: error
